@@ -19,12 +19,14 @@ extern crate smoltcp;
 
 // hardware register structs with accessor methods
 use stm32f7::{audio, board, embedded, ethernet, lcd, sdram, system_clock, touch, i2c};
-use stm32f7::ethernet::IP_ADDR;
 use smoltcp::socket::{Socket, SocketSet, TcpSocket, TcpSocketBuffer};
 use smoltcp::socket::{UdpSocket, UdpPacketMetadata, UdpSocketBuffer};
-use smoltcp::wire::{IpEndpoint, IpAddress};
+use smoltcp::wire::{IpEndpoint, IpAddress, EthernetAddress, Ipv4Address};
 use smoltcp::time::Instant;
 use alloc::Vec;
+
+const ETH_ADDR: EthernetAddress = EthernetAddress([0x00, 0x08, 0xdc, 0xab, 0xcd, 0xef]);
+const IP_ADDR: Ipv4Address = Ipv4Address([141, 52, 46, 198]);
 
 #[no_mangle]
 pub unsafe extern "C" fn reset() -> ! {
@@ -168,7 +170,8 @@ fn main(hw: board::Hardware) -> ! {
         &mut gpio,
         ethernet_mac,
         ethernet_dma,
-    ).map(|device| device.into_interface());
+        ETH_ADDR,
+    ).map(|device| device.into_interface(IP_ADDR));
     if let Err(e) = ethernet_interface {
         println!("ethernet init failed: {:?}", e);
     };
@@ -206,6 +209,7 @@ fn main(hw: board::Hardware) -> ! {
 
     use stm32f7::interrupts::{scope, Priority};
     use stm32f7::interrupts::interrupt_request::InterruptRequest;
+    println!("start");
 
     scope(
         nvic,
@@ -263,9 +267,10 @@ fn poll_socket(socket: &mut Socket) -> Result<(), smoltcp::Error> {
                 let reply;
                 match socket.recv() {
                     Ok((data, remote_endpoint)) => {
+                        println!("{:?}", data);
                         let mut data = Vec::from(data);
                         let len = data.len()-1;
-                        data[..len].reverse();
+                        // data[..len].reverse();
                         reply = (data, remote_endpoint);
                     },
                     Err(smoltcp::Error::Exhausted) => break,
@@ -280,10 +285,12 @@ fn poll_socket(socket: &mut Socket) -> Result<(), smoltcp::Error> {
                 if !socket.may_recv() { return Ok(()); }
                 let reply = socket.recv(|data| {
                     if data.len() > 0 {
+                        println!("t{:?}", data);
                         let mut reply = Vec::from("tcp: ");
                         let start_index = reply.len();
                         reply.extend_from_slice(data);
-                        reply[start_index..(start_index + data.len() - 1)].reverse();
+                        // reply[start_index..(start_index + data.len() - 1)].reverse();
+                        
                         (data.len(), Some(reply))
                     } else {
                         (data.len(), None)
